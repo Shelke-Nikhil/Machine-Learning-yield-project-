@@ -1,0 +1,86 @@
+import numpy as np
+import random
+def mse(y):
+    return np.mean((y - np.mean(y)) ** 2)
+class DecisionTreeRegressor:
+    def __init__(self, max_depth=5, min_samples=2):
+        self.max_depth = max_depth
+        self.min_samples = min_samples
+        self.tree = None
+
+    def fit(self, X, y, depth=0):
+        n_samples, n_features = X.shape
+
+        if depth >= self.max_depth or n_samples < self.min_samples:
+            return np.mean(y)
+
+        best_feature, best_threshold, best_loss = None, None, float("inf")
+
+        for feature in range(n_features):
+            thresholds = np.unique(X[:, feature])
+            for threshold in thresholds:
+                left_mask = X[:, feature] <= threshold
+                right_mask = X[:, feature] > threshold
+
+                if len(y[left_mask]) == 0 or len(y[right_mask]) == 0:
+                    continue
+
+                loss = (
+                    mse(y[left_mask]) * len(y[left_mask]) +
+                    mse(y[right_mask]) * len(y[right_mask])
+                )
+
+                if loss < best_loss:
+                    best_loss = loss
+                    best_feature = feature
+                    best_threshold = threshold
+
+        if best_feature is None:
+            return np.mean(y)
+
+        left_mask = X[:, best_feature] <= best_threshold
+        right_mask = X[:, best_feature] > best_threshold
+
+        return {
+            "feature": best_feature,
+            "threshold": best_threshold,
+            "left": self.fit(X[left_mask], y[left_mask], depth + 1),
+            "right": self.fit(X[right_mask], y[right_mask], depth + 1)
+        }
+
+    def train(self, X, y):
+        self.tree = self.fit(X, y)
+
+    def predict_one(self, x, node):
+        if not isinstance(node, dict):
+            return node
+        if x[node["feature"]] <= node["threshold"]:
+            return self.predict_one(x, node["left"])
+        else:
+            return self.predict_one(x, node["right"])
+
+    def predict(self, X):
+        return np.array([self.predict_one(x, self.tree) for x in X])
+class RandomForestRegressor:
+    def __init__(self, n_trees=10, max_depth=5, sample_ratio=0.8):
+        self.n_trees = n_trees
+        self.max_depth = max_depth
+        self.sample_ratio = sample_ratio
+        self.trees = []
+
+    def bootstrap_sample(self, X, y):
+        n_samples = int(len(X) * self.sample_ratio)
+        indices = np.random.choice(len(X), n_samples, replace=True)
+        return X[indices], y[indices]
+
+    def fit(self, X, y):
+        self.trees = []
+        for _ in range(self.n_trees):
+            X_sample, y_sample = self.bootstrap_sample(X, y)
+            tree = DecisionTreeRegressor(max_depth=self.max_depth)
+            tree.train(X_sample, y_sample)
+            self.trees.append(tree)
+
+    def predict(self, X):
+        predictions = np.array([tree.predict(X) for tree in self.trees])
+        return np.mean(predictions, axis=0)
